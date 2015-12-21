@@ -29,7 +29,7 @@ significantly different in your own project.
     class Build is Panda::Builder {
         method build($workdir) {
             my $makefiledir = "$workdir/src";
-            my $destdir = "$workdir/blib/lib/My/Module";
+            my $destdir = "$workdir/resources";
             mkpath $destdir;
             make($makefiledir, $destdir);
         }
@@ -43,7 +43,7 @@ significantly different in your own project.
     # The example here is how the 'make' sub generates the makefile in the above Build.pm file
     use LibraryMake;
 
-    my $destdir = '../lib/My/Module';
+    my $destdir = '../resources';
     my %vars = get-vars($destdir);
     process-makefile('.', %vars);
 
@@ -65,18 +65,24 @@ significantly different in your own project.
 
     use NativeCall;
     use LibraryMake;
-    use Find::Bundled;
 
     # Find our compiled library.
     sub library {
         my $so = get-vars('')<SO>;
-        return Find::Bundled.find("libfoo$so", "My/Module", :throw); # Not My::Module!
+        return ~(%?RESOURCES{"libfoo$so"});
     }
 
     # we put 'is native(&library)' because it will call the function and resolve the
     # library at compile time, while we need it to happen at runtime (because
     # this library is installed *after* being compiled).
     sub foo() is native(&library) { * };
+
+/META.info
+
+    # include the following section in your META.info:
+    "resources" : [
+        "libfoo.so"
+    ]
 
 =end pod
 
@@ -194,37 +200,4 @@ our sub make(Str $folder, Str $destfolder) is export {
         die "make exited with signal "~$proc.exitcode;
     }
     chdir($goback);
-}
-
-#| Deprecated in favor of the Find::Bundled module.
-#| Utility function - will find your bundled .dll file and return the path.
-our sub find-bundled(Str $lib is copy, Str $base) is export is DEPRECATED('Find::Bundled.find($lib, $base, :keep-filename, :return-original)') {
-    # if we can't find one, assume there's a system install
-    my $b = $lib;
-    if $base {
-        $b = $base~"/$lib";
-    }
-    for @*INC -> $_ is copy {
-        $_ = CompUnitRepo.new($_);
-        my $base = $b;
-        if $_ ~~ CompUnitRepo::Local::File {
-            # CUR::Local::File has screwed up .files semantics
-            $base = $_.IO ~ '/' ~ $base;
-        }
-        if my @files = ($_.files($base)
-                     || $_.files("lib/$base")
-                     || $_.files("blib/$base")
-                     || $_.files("blib/lib/$base")) {
-            my $files = @files[0]<files>;
-            my $tmp = $files{$base} || $files{"blib/$base"};
-
-            # copy to a temp dir
-            $tmp.IO.copy($*SPEC.tmpdir ~ '\\' ~ $lib);
-            $lib = $*SPEC.tmpdir ~ '\\' ~ $lib;
-
-            last;
-        }
-    }
-
-    $lib;
 }
